@@ -1,0 +1,12 @@
+{
+    "work_minutes": 15,
+    "break_minutes": 3,
+    "work_color": "#55aaff",
+    "break_color": "#55aaff",
+    "text_size": 97,
+    "text_opacity": 0.54,
+    "bg_opacity": 0.0,
+    "work_volume": 15,
+    "break_volume": 29,
+    "run_at_startup": true
+}
