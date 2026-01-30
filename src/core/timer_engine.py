@@ -3,8 +3,10 @@ from PySide6.QtCore import QObject, QTimer, Signal
 class TimerEngine(QObject):
     # Signals
     tick = Signal(str) # Emits current time string "MM" or "MM:SS" (conceptually we only show MM but engine knows all)
+    tick_progress = Signal(float) # Emits 0.0 to 1.0 progress (0=start, 1=end)
     state_changed = Signal(str) # "work" or "break"
     completed = Signal() # Timer finished a cycle
+    work_completed = Signal() # Specifically when WORK session ends
 
     def __init__(self, work_minutes=25, break_minutes=5):
         super().__init__()
@@ -66,6 +68,9 @@ class TimerEngine(QObject):
         trigger_auto_start = True # Requirements imply continuous flow ("looping waves" etc)
         
         if self.current_state == "work":
+            # Work finished -> Emit signal
+            self.work_completed.emit()
+            
             self.current_state = "break"
             self.remaining_seconds = self.break_seconds
         else:
@@ -97,3 +102,11 @@ class TimerEngine(QObject):
             display_text = f"0{display_text}"
             
         self.tick.emit(display_text)
+        
+        # Calculate Progress (0.0 -> 1.0)
+        total = self.work_seconds if self.current_state == "work" else self.break_seconds
+        if total > 0:
+            progress = 1.0 - (self.remaining_seconds / total)
+        else:
+            progress = 0.0
+        self.tick_progress.emit(progress)

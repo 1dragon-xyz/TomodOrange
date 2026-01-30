@@ -6,8 +6,7 @@ class AudioManager(QObject):
     def __init__(self):
         super().__init__()
         
-        from utils.path_utils import get_resource_path
-        self.assets_dir = get_resource_path("assets", "audio")
+        self.assets_dir = os.path.join(os.getcwd(), "assets", "audio")
         
         # --- Work Internal (Water Drop) ---
         # Using QSoundEffect for low latency, low overhead short sounds
@@ -26,14 +25,33 @@ class AudioManager(QObject):
         self.player.setSource(QUrl.fromLocalFile(waves_path))
         self.audio_output.setVolume(0.5) # Default
         self.player.setLoops(QMediaPlayer.Infinite) # Continuous loop
+        
+        self.is_muted = False
+
+    def toggle_mute(self, is_muted):
+        """Toggle mute state."""
+        self.is_muted = is_muted
+        
+        # If we are currently playing the loop and get muted, pause/stop it?
+        # OR just rely on logic next time checks happen.
+        # Actually, if we are playing break sound and mute is hit, we should silence it immediately.
+        # But QSoundEffect/QAudioOutput mute is easiest.
+        
+        self.tick_effect.setMuted(is_muted)
+        self.audio_output.setMuted(is_muted)
 
     def play_tick(self):
         """Play the work tick sound once."""
+        if self.is_muted:
+            return
+            
         if self.tick_effect.status() == QSoundEffect.Ready:
             self.tick_effect.play()
 
     def start_break_sound(self):
         """Start the continuous break sound."""
+        # Even if muted, we might 'start' it so it's playing but silent?
+        # Or just not play. Let's rely on setMuted() above which handles the output silence.
         if self.player.playbackState() != QMediaPlayer.PlayingState:
             self.player.play()
 

@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 class StartupManager:
-    APP_NAME = "Michael's Pomodoro"
+    APP_NAME = "TomodOrange"
 
     @staticmethod
     def _get_shortcut_path():
@@ -13,28 +13,30 @@ class StartupManager:
     @staticmethod
     def is_run_at_startup():
         """Check if the app shortcut exists in startup folder."""
-        if getattr(sys, 'frozen', False):
-            # When packaged (e.g. MSIX), startup is managed by the OS/Manifest.
-            # We assume it is enabled by default or managed via Task Manager.
-            return True
         return os.path.exists(StartupManager._get_shortcut_path())
 
     @staticmethod
     def set_run_at_startup(enabled):
         """Enable or disable warning at startup by creating/removing a shortcut."""
-        if getattr(sys, 'frozen', False):
-            print("Startup management is handled by Windows Store ecosystem for packaged app.")
-            return True
-
         shortcut_path = StartupManager._get_shortcut_path()
         
         if enabled:
             # Create Shortcut using VBScript (Standard method without pywin32)
             try:
-                # Target: pythonw.exe (no console)
-                python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                if not os.path.exists(python_exe):
-                    python_exe = sys.executable # Fallback
+                # Target: Custom Shim "TomodOrange.exe" (copy of pythonw.exe)
+                # This makes Task Manager show "TomodOrange" instead of "Python"
+                python_dir = os.path.dirname(sys.executable)
+                pythonw_exe = os.path.join(python_dir, "pythonw.exe")
+                if not os.path.exists(pythonw_exe):
+                    pythonw_exe = sys.executable # Fallback to python.exe if w missing
+
+                script_path = os.path.abspath(sys.argv[0])
+                src_dir = os.path.dirname(script_path)
+                project_root = os.path.dirname(src_dir)
+
+                # Use original pythonw.exe directly to avoid dependency issues (DLLs)
+                # Copying python exe to another folder breaks it unless fully portable.
+                python_exe = pythonw_exe
                 
                 script_path = os.path.abspath(sys.argv[0])
                 src_dir = os.path.dirname(script_path) # .../src
@@ -42,13 +44,23 @@ class StartupManager:
                 
                 # Check where assets is. If main.py is run from root, logic differs?
                 # Best to check existence.
-                icon_path_root = os.path.join(project_root, "assets", "icon.png")
-                icon_path_src = os.path.join(src_dir, "assets", "icon.png")
+                # Prioritize .ico for Windows Shortcuts
+                icon_name = "icon.ico"
+                
+                icon_path_root = os.path.join(project_root, "assets", icon_name)
+                icon_path_src = os.path.join(src_dir, "assets", icon_name)
                 
                 if os.path.exists(icon_path_root):
                     icon_path = icon_path_root
-                else:
+                elif os.path.exists(icon_path_src):
                     icon_path = icon_path_src
+                else:
+                    # Fallback to png if ico missing
+                    icon_path_root_png = os.path.join(project_root, "assets", "icon.png")
+                    if os.path.exists(icon_path_root_png):
+                         icon_path = icon_path_root_png
+                    else:
+                         icon_path = os.path.join(src_dir, "assets", "icon.png")
                 
                 # IMPORTANT: Set working dir to project root (where assets usually are relative to)
                 # If we use src_dir, os.getcwd() becomes src and assets/audio won't be found.

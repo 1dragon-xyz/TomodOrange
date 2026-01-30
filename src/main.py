@@ -4,16 +4,25 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QAction
 from ui.floating_widget import FloatingWidget
 from ui.settings_window import SettingsWindow
+from ui.log_entry_dialog import LogEntryDialog
 from ui.tray_manager import TrayIconManager
 from utils.startup_manager import StartupManager
 from core.timer_engine import TimerEngine
 from core.audio_manager import AudioManager
 
+from ui.log_viewer_window import LogViewerWindow
+
 def main():
+    # Fix Taskbar Icon on Windows
+    import ctypes
+    myappid = 'michaels.pomodoro.tomodorange.1.0' # arbitrary string
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
     app = QApplication(sys.argv)
     
     # Prevent the app from quitting when the last window (Settings) is closed
     settings = SettingsWindow() # Init early to get defaults
+    log_viewer = LogViewerWindow() 
     app.setQuitOnLastWindowClosed(False)
     
     # Components
@@ -57,6 +66,12 @@ def main():
             
     timer_engine.state_changed.connect(handle_state_change)
     
+    # 1.1 Timer -> Widget (Update Mode Work/Break for Orange Style)
+    timer_engine.state_changed.connect(widget.set_mode)
+    
+    # 1.2 Timer -> Widget (Update Progress)
+    timer_engine.tick_progress.connect(widget.set_progress)
+    
     # 2. Timer -> Audio (Ticks)
     def handle_tick_sound(time_str):
         # Play tick only during Work phase
@@ -65,6 +80,29 @@ def main():
             
     timer_engine.tick.connect(handle_tick_sound)
     
+    # 2.1 Timer -> Log Dialog
+    from PySide6.QtCore import QTimer
+    
+    # Keep reference to prevent GC
+    log_dialog_ref = [None]
+    
+    def open_log_dialog(mode="logging"):
+        # Create dialog on demand to ensure fresh state/LogManager reading
+        dialog = LogEntryDialog(mode=mode)
+        log_dialog_ref[0] = dialog
+        
+        if mode == "logging":
+            # Chain to Planning Dialog on save
+            def open_planning():
+                # Use QTimer to separate the event loops slightly or just allow one to close
+                QTimer.singleShot(100, lambda: open_log_dialog(mode="planning"))
+                
+            dialog.accepted.connect(open_planning)
+        
+        dialog.show() # Non-blocking
+        
+    timer_engine.work_completed.connect(open_log_dialog)
+
     # 3. Settings -> Timer & Audio
     def handle_settings_change(settings_dict):
         # Visuals
@@ -86,6 +124,10 @@ def main():
             text_size=settings_dict['text_size']
         )
         
+        # Orange Style Updates
+        widget.set_timer_style(settings_dict.get('timer_style', 'orange'))
+        widget.set_orange_opacity(settings_dict.get('orange_opacity', 1.0))
+        
         # Timer Durations - Fix: Only update if changed to avoid reset
         # Check if values differ from current engine values (converted to minutes)
         current_work_min = int(timer_engine.work_seconds / 60)
@@ -95,9 +137,10 @@ def main():
             settings_dict['break_minutes'] != current_break_min):
             timer_engine.update_durations(settings_dict['work_minutes'], settings_dict['break_minutes'])
         
-        # Audio Volume
+        # Audio Volume & Mute
         audio_manager.set_work_volume(settings_dict['work_volume'])
         audio_manager.set_break_volume(settings_dict['break_volume'])
+        audio_manager.toggle_mute(settings_dict.get('is_muted', False))
         
         # Startup
         if settings_dict['run_at_startup'] != StartupManager.is_run_at_startup():
@@ -117,12 +160,42 @@ def main():
     # Tray -> Ghost Mode
     def handle_tray_ghost_toggle(enabled):
         widget.toggle_ghost_mode(enabled)
+        tray_manager.update_ghost_state(enabled)
         
     tray_manager.toggle_ghost_requested.connect(handle_tray_ghost_toggle)
+
+    # Tray -> Mute Toggle
+    def handle_tray_mute_toggle(is_muted):
+        # 1. Update Audio
+        audio_manager.toggle_mute(is_muted)
+        
+        # 2. Persist
+        # We need to update the settings file. We can fetch current from window + mute override
+        # OR just load, update, save. Using SettingsWindow helper is risky if window is stale? 
+        # Actually window is alive.
+        current_s = settings.get_current_settings()
+        current_s['is_muted'] = is_muted
+        from utils.settings_manager import SettingsManager
+        SettingsManager.save_settings(current_s)
+        
+    tray_manager.toggle_mute_requested.connect(handle_tray_mute_toggle)
+    
+    # Tray -> Review Logs
+    def show_log_viewer():
+        log_viewer.showNormal()
+        log_viewer.activateWindow()
+        log_viewer.raise_()
+        
+    tray_manager.review_logs_requested.connect(show_log_viewer)
 
     # Initialize
     # Sync visual defaults from Settings (which loaded from JSON)
     current_settings = settings.get_current_settings()
+    # Note: 'is_muted' might be missing from get_current_settings() if we removed the UI element
+    # So we'll fetch it from the raw loaded settings or re-read.
+    # The settings window `current_settings` AT INIT TIME had it.
+    initial_mute_state = settings.current_settings.get('is_muted', False)
+    
     widget.current_bg_opacity = current_settings['bg_opacity']
     widget.current_text_opacity = current_settings['text_opacity']
     widget.current_text_size = current_settings['text_size']
@@ -137,13 +210,21 @@ def main():
         text_color=widget.current_text_color, 
         bg_opacity=widget.current_bg_opacity,
         text_opacity=widget.current_text_opacity,
-        text_size=widget.current_text_size
+        text_size=current_settings['text_size']
     )
+    
+    # Apply Initial Orange Settings
+    widget.set_timer_style(current_settings.get('timer_style', 'orange'))
+    widget.set_orange_opacity(current_settings.get('orange_opacity', 1.0))
+    # Ensure initial mode is set (TimerEngine starts at Work)
+    widget.set_mode("work") 
     timer_engine.start()
     
     # Apply initial Audio volumes
     audio_manager.set_work_volume(current_settings['work_volume'])
     audio_manager.set_break_volume(current_settings['break_volume'])
+    audio_manager.toggle_mute(initial_mute_state)
+    tray_manager.update_mute_state(initial_mute_state)
     
     # Initial Sync (Settings -> Widget)
     # Ensure startup registry matches our default (True) if not already set

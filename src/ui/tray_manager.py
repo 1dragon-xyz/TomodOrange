@@ -1,11 +1,13 @@
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtGui import QIcon, QAction, QImage, QPixmap
 from PySide6.QtCore import Signal, QObject, Qt
 
 class TrayIconManager(QObject):
     # Signals
     show_settings_requested = Signal()
     toggle_ghost_requested = Signal(bool)
+    toggle_mute_requested = Signal(bool)
+    review_logs_requested = Signal()
     quit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -21,7 +23,7 @@ class TrayIconManager(QObject):
         icon_path = os.path.join(os.getcwd(), 'assets', 'icon.png')
         
         if os.path.exists(icon_path):
-             self.tray_icon.setIcon(QIcon(icon_path))
+             self.normal_icon = QIcon(icon_path)
         else:
             # Fallback to generated pixel
             from PySide6.QtGui import QPixmap, QPainter, QColor
@@ -31,8 +33,13 @@ class TrayIconManager(QObject):
             painter.setBrush(QColor("#008080")) # Teal
             painter.drawEllipse(0, 0, 16, 16)
             painter.end()
-            self.tray_icon.setIcon(QIcon(pixmap))
-        self.tray_icon.setToolTip("Michael's Pomodoro")
+            self.normal_icon = QIcon(pixmap)
+            
+        self.tray_icon.setIcon(self.normal_icon)
+        
+        # Generate Grayscale Icon
+        self.grayscale_icon = self.create_grayscale_icon(self.normal_icon)
+        self.tray_icon.setToolTip("TomodOrange")
         
         # Context Menu
         self.menu = QMenu()
@@ -44,6 +51,13 @@ class TrayIconManager(QObject):
         # On click
         self.tray_icon.activated.connect(self.on_tray_activated)
 
+    def create_grayscale_icon(self, icon):
+        """Creates a grayscale version of the given QIcon."""
+        pixmap = icon.pixmap(32, 32) # Get pixmap at standard size
+        image = pixmap.toImage()
+        grayscale_image = image.convertToFormat(QImage.Format.Format_Grayscale8)
+        return QIcon(QPixmap.fromImage(grayscale_image))
+
     def init_menu(self):
         # Status (Disabled Action acting as label)
         # Status (Disabled Action acting as label)
@@ -53,6 +67,17 @@ class TrayIconManager(QObject):
         
         # self.menu.addSeparator()
         
+        # Mute Toggle
+        self.mute_action = QAction("Mute", self.menu)
+        self.mute_action.setCheckable(True)
+        self.mute_action.triggered.connect(lambda c: self.toggle_mute_requested.emit(c))
+        self.menu.addAction(self.mute_action)
+        
+        # Review Logs
+        self.review_action = QAction("Review Logs", self.menu)
+        self.review_action.triggered.connect(self.review_logs_requested.emit)
+        self.menu.addAction(self.review_action)
+
         # Ghost Mode Toggle
         self.ghost_action = QAction("Ghost Mode", self.menu)
         self.ghost_action.setCheckable(True)
@@ -74,11 +99,25 @@ class TrayIconManager(QObject):
         self.menu.addAction(self.quit_action)
 
     def update_ghost_state(self, is_ghost):
-        """Update the menu check state if changed externally."""
+        """Update the menu check state and tray icon if changed externally."""
         # Block signals to prevent feedback loop if needed
         self.ghost_action.blockSignals(True)
         self.ghost_action.setChecked(is_ghost)
         self.ghost_action.blockSignals(False)
+        
+        # Update Icon
+        if is_ghost:
+            self.tray_icon.setIcon(self.grayscale_icon)
+            self.tray_icon.setToolTip("TomodOrange (Ghost Mode)")
+        else:
+            self.tray_icon.setIcon(self.normal_icon)
+            self.tray_icon.setToolTip("TomodOrange")
+
+    def update_mute_state(self, is_muted):
+        """Update the menu check state if changed externally."""
+        self.mute_action.blockSignals(True)
+        self.mute_action.setChecked(is_muted)
+        self.mute_action.blockSignals(False)
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.Trigger:

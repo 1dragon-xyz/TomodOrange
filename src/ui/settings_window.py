@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, 
-    QSpinBox, QCheckBox, QColorDialog, QPushButton, QGroupBox
+    QSpinBox, QCheckBox, QColorDialog, QPushButton, QGroupBox, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -12,7 +12,7 @@ class SettingsWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Settings - Michael's Pomodoro")
+        self.setWindowTitle("Settings - TomodOrange")
         self.resize(350, 500)
         
         # App Icon
@@ -28,6 +28,28 @@ class SettingsWindow(QWidget):
         # Main Layout
         layout = QVBoxLayout(self)
         
+        # --- Timer Style Section ---
+        style_group = QGroupBox("Timer Style")
+        style_layout = QHBoxLayout()
+        
+        self.style_bg = QButtonGroup(self)
+        self.radio_orange = QRadioButton("Orange Visual")
+        self.radio_time = QRadioButton("Time")
+        
+        self.style_bg.addButton(self.radio_orange)
+        self.style_bg.addButton(self.radio_time)
+        
+        # Set Default
+        if self.current_settings.get('timer_style', 'orange') == 'orange':
+            self.radio_orange.setChecked(True)
+        else:
+            self.radio_time.setChecked(True)
+            
+        style_layout.addWidget(self.radio_orange)
+        style_layout.addWidget(self.radio_time)
+        style_group.setLayout(style_layout)
+        layout.addWidget(style_group)
+
         # --- Timer Section ---
         timer_group = QGroupBox("Timer Durations (Minutes)")
         timer_layout = QHBoxLayout()
@@ -64,25 +86,29 @@ class SettingsWindow(QWidget):
         colors_layout.addWidget(self.work_color_btn)
         colors_layout.addWidget(self.break_color_btn)
         
-        # Text Size
-        self.size_slider = self._create_slider("Text Size", 12, 150, self.current_settings['text_size'])
+        # Size (Shared)
+        self.size_slider = self._create_slider("Size", 12, 300, self.current_settings['text_size'])
         
-        # Opacity Sliders (Default 0% for BG per feedback)
+        # Opacity Sliders
+        # Text/BG (For Time Mode)
         self.text_opacity_slider = self._create_slider("Text Opacity", 10, 100, int(self.current_settings['text_opacity']*100))
         self.bg_opacity_slider = self._create_slider("Background Opacity", 0, 100, int(self.current_settings['bg_opacity']*100))
+        
+        # Orange Opacity (For Orange Mode)
+        self.orange_opacity_slider = self._create_slider("Orange Opacity", 10, 100, int(self.current_settings.get('orange_opacity', 1.0)*100))
         
         visuals_layout.addLayout(colors_layout)
         visuals_layout.addLayout(self.size_slider['layout'])
         visuals_layout.addLayout(self.text_opacity_slider['layout'])
         visuals_layout.addLayout(self.bg_opacity_slider['layout'])
+        visuals_layout.addLayout(self.orange_opacity_slider['layout'])
         visuals_group.setLayout(visuals_layout)
         layout.addWidget(visuals_group)
         
         # --- Audio Section ---
         audio_group = QGroupBox("Audio Levels")
         audio_layout = QVBoxLayout()
-        audio_group = QGroupBox("Audio Levels")
-        audio_layout = QVBoxLayout()
+        
         self.work_vol_slider = self._create_slider("Work Volume (Tic)", 0, 100, self.current_settings['work_volume'])
         self.break_vol_slider = self._create_slider("Break Volume (Waves)", 0, 100, self.current_settings['break_volume'])
         
@@ -97,8 +123,6 @@ class SettingsWindow(QWidget):
         
         # self.ghost_mode_check = QCheckBox("Ghost Mode (Click-Through)") # Removed per feedback
         self.startup_check = QCheckBox("Run at Startup")
-        # self.ghost_mode_check = QCheckBox("Ghost Mode (Click-Through)") # Removed per feedback
-        self.startup_check = QCheckBox("Run at Startup")
         self.startup_check.setChecked(self.current_settings['run_at_startup'])
         
         # system_layout.addWidget(self.ghost_mode_check)
@@ -108,6 +132,38 @@ class SettingsWindow(QWidget):
         
         # Connect Signals
         self._connect_signals()
+        
+        # Initial State update
+        self._update_visibility()
+        
+    def _update_visibility(self):
+        is_orange = self.radio_orange.isChecked()
+        
+        # Visibility/Enabled for Time Mode controls
+        self.text_opacity_slider['label'].setEnabled(not is_orange)
+        self.text_opacity_slider['slider'].setEnabled(not is_orange)
+        self.bg_opacity_slider['label'].setEnabled(not is_orange)
+        self.bg_opacity_slider['slider'].setEnabled(not is_orange)
+        self.work_color_btn.setEnabled(not is_orange)
+        self.break_color_btn.setEnabled(not is_orange)
+        
+        # Visibility/Enabled for Orange Mode controls
+        self.orange_opacity_slider['label'].setEnabled(is_orange)
+        self.orange_opacity_slider['slider'].setEnabled(is_orange)
+        
+        # We can also hide them to be cleaner, but disabling is fine for now according to plan.
+        # Let's hide them? Plan said "Visible/Enabled only in...". Let's try hiding for cleaner UI.
+        
+        self.text_opacity_slider['label'].setVisible(not is_orange)
+        self.text_opacity_slider['slider'].setVisible(not is_orange)
+        self.bg_opacity_slider['label'].setVisible(not is_orange)
+        self.bg_opacity_slider['slider'].setVisible(not is_orange)
+        self.work_color_btn.setVisible(not is_orange)
+        self.break_color_btn.setVisible(not is_orange)
+        
+        self.orange_opacity_slider['label'].setVisible(is_orange)
+        self.orange_opacity_slider['slider'].setVisible(is_orange)
+
         
     def _create_slider(self, label_text, min_val, max_val, default):
         layout = QVBoxLayout()
@@ -131,8 +187,12 @@ class SettingsWindow(QWidget):
         self.size_slider['slider'].valueChanged.connect(self.emit_settings)
         self.text_opacity_slider['slider'].valueChanged.connect(self.emit_settings)
         self.bg_opacity_slider['slider'].valueChanged.connect(self.emit_settings)
+        self.orange_opacity_slider['slider'].valueChanged.connect(self.emit_settings)
         # self.ghost_mode_check.toggled.connect(self.emit_settings)
         self.startup_check.toggled.connect(self.emit_settings)
+        
+        # Radio Toggle
+        self.style_bg.buttonClicked.connect(lambda: [self._update_visibility(), self.emit_settings()])
         
         # Inputs that might need 'editingFinished' or valueChanged
         self.work_input.valueChanged.connect(self.emit_settings)
@@ -160,6 +220,8 @@ class SettingsWindow(QWidget):
             "text_size": self.size_slider['slider'].value(),
             "text_opacity": self.text_opacity_slider['slider'].value() / 100.0,
             "bg_opacity": self.bg_opacity_slider['slider'].value() / 100.0,
+            "orange_opacity": self.orange_opacity_slider['slider'].value() / 100.0,
+            "timer_style": "orange" if self.radio_orange.isChecked() else "classic",
             "work_volume": self.work_vol_slider['slider'].value(),
             "break_volume": self.break_vol_slider['slider'].value(),
             # "ghost_mode": self.ghost_mode_check.isChecked(),
