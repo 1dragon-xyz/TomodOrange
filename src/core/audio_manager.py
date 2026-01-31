@@ -37,7 +37,7 @@ class AudioManager(QObject):
         # Actually, if we are playing break sound and mute is hit, we should silence it immediately.
         # But QSoundEffect/QAudioOutput mute is easiest.
         
-        self.tick_effect.setMuted(is_muted)
+
         self.audio_output.setMuted(is_muted)
 
     def play_tick(self):
