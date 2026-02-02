@@ -1,5 +1,5 @@
 from PySide6.QtCore import QUrl, QObject
-from PySide6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
+from PySide6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput, QMediaDevices
 import os
 
 class AudioManager(QObject):
@@ -27,6 +27,53 @@ class AudioManager(QObject):
         self.player.setLoops(QMediaPlayer.Infinite) # Continuous loop
         
         self.is_muted = False
+        
+        self._setup_connections()
+
+    def _setup_connections(self):
+        """Setup signal connections for error handling and device changes."""
+        # Listen for media player errors
+        self.player.errorOccurred.connect(self._on_player_error)
+        
+        # Listen for system audio device changes
+        self.media_devices = QMediaDevices(self)
+        self.media_devices.audioOutputsChanged.connect(self._on_audio_outputs_changed)
+
+    def _on_player_error(self, error, error_string):
+        """Handle media player errors."""
+        print(f"AudioManager: Player error: {error} - {error_string}")
+        # Try to recover if it looks like a resource/device error
+        if error == QMediaPlayer.ResourceError:
+             self._recover_audio_state()
+
+    def _on_audio_outputs_changed(self):
+        """Handle changes in available audio outputs."""
+        print("AudioManager: Audio outputs changed. Checking device validity...")
+        # If current device is null or invalid, try to reset to default
+        if self.audio_output.device().isNull():
+             self._recover_audio_state()
+
+    def _recover_audio_state(self):
+        """Attempt to recover audio state by resetting to default device."""
+        print("AudioManager: Attempting to recover audio state...")
+        
+        # 1. Reset QAudioOutput to default device
+        default_device = QMediaDevices.defaultAudioOutput()
+        if not default_device.isNull():
+            self.audio_output.setDevice(default_device)
+            self.tick_effect.setAudioDevice(default_device)
+            print(f"AudioManager: Reset to default device: {default_device.description()}")
+            
+        # 2. If we were supposed to be playing/looping, ensure we are
+        # Validating player state might be tricky if it thinks it's stopped due to error
+        # For the break sound (waves), if we are in a state where it SHOULD be playing, restart it.
+        # But we don't strictly know if it *should* be playing currently without state from outside.
+        # However, if the player has source and is not playing, and we just fixed the device...
+        # A safer bet implies we might need the main controller to tell us 'resume'
+        # BUT, for now, let's just ensure volume/mute state is re-applied
+        
+        self.audio_output.setMuted(self.is_muted)
+
 
     def toggle_mute(self, is_muted):
         """Toggle mute state."""
