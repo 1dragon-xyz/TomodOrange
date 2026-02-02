@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction, QImage, QPixmap
 from PySide6.QtCore import Signal, QObject, Qt
+from ui.about_dialog import AboutDialog
 
 class TrayIconManager(QObject):
     # Signals
@@ -13,6 +14,7 @@ class TrayIconManager(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.about_dialog = None
         
         # Create Tray Icon
         # Note: We need a valid icon path. For now we might generate a placeholder or use standard.
@@ -100,6 +102,13 @@ class TrayIconManager(QObject):
         
         self.menu.addSeparator()
         
+        # About
+        self.about_action = QAction("About", self.menu)
+        self.about_action.triggered.connect(self.show_about_dialog)
+        self.menu.addAction(self.about_action)
+
+        self.menu.addSeparator()
+        
         # Exit
         self.quit_action = QAction("Exit", self.menu)
         self.quit_action.triggered.connect(self.quit_requested.emit)
@@ -136,3 +145,11 @@ class TrayIconManager(QObject):
         if reason == QSystemTrayIcon.Trigger:
             # Left click -> could toggle settings or just bring widget to front
             self.show_settings_requested.emit()
+
+    def show_about_dialog(self):
+        if not self.about_dialog:
+            self.about_dialog = AboutDialog()
+        
+        self.about_dialog.show()
+        self.about_dialog.raise_()
+        self.about_dialog.activateWindow()

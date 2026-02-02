@@ -1,0 +1,6 @@
+APP_NAME = "TomodOrange"
+APP_VERSION = "1.0.0"
+DEVELOPER_NAME = "Anh Nguyen (Michael)"
+WEBSITE_URL = "https://1dragon.xyz"
+SUPPORT_EMAIL = "hello@1dragon.xyz"
+GITHUB_URL = "https://github.com/1dragon-xyz/michaels-pomodoro"
